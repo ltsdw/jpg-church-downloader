@@ -1,34 +1,77 @@
 from urllib.request import Request, urlopen
 from urllib.error import URLError
-from bs4 import BeautifulSoup, ResultSet
+from bs4 import BeautifulSoup, ResultSet, Tag, NavigableString
 from os import path, mkdir, getcwd, chdir
-from sys import exit
-from typing import Any, List
+from sys import exit, stdout
+from typing import Any, Dict, List, Generator
 from requests import get
 from urllib.request import Request, urlopen
+from concurrent.futures import ThreadPoolExecutor
 
 
-_UrlopenRet: Any = Any
+_UrlopenRet = Any
 
 
 class Main:
-    def __init__(self, url: str) -> None:
-        self.url: str = url
+    def __init__(self, url: str, _max_workers: int = 20) -> None:
+
+        self._page: _UrlopenRet = self._makeRequest(url)
+        self._soup: BeautifulSoup = BeautifulSoup(self._page, "html.parser") 
+
+        self._createDir(self._soup)
+
+        self._threadedDownloads(_max_workers)
 
 
-    def createDir(self) -> None:
-        req: Request = Request(self.url, headers={'User-Agent': 'Mozilla/5.0'})
+    def _threadedDownloads(self, max_workers: int) -> None:
+        """
+        Parallelize the downloads.
+
+        :param max_workers: the max thread number.
+        :return:
+        """
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for link in self._getLinks(self._soup):
+                executor.submit(self._downloadImage, link)
+
+
+    @staticmethod
+    def _makeRequest(url: str) -> _UrlopenRet:
+        """
+        Return the content of the request. 
+
+        :param page: url to the album.
+        :return
+        """
+
+        req: Request = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
 
         try:
             page: _UrlopenRet = urlopen(req).read()
+
+            return page
+
         except URLError:
-            exit('verify the connection with the internet!')
+            print("Failed to make a page request verify your internet connection!")
+            exit(-1)
 
 
-        soup: BeautifulSoup = BeautifulSoup(page, 'html.parser')
 
-        dir_name: ResultSet = soup.find("h1", class_="text-overflow-ellipsis")
+    @staticmethod
+    def _createDir(soup: BeautifulSoup) -> None:
+        """
+        creates a directory where the files will be saved if doesn't exist and change to it.
 
+        :param soup: parsed html album's content.
+        :return
+        """
+
+        dir_name: Tag | NavigableString | None = soup.find("h1", class_="text-overflow-ellipsis")
+
+        if not dir_name:
+            print(f"Failed to parse a directory name from the {url}")
+            exit(-1)
 
         current_dir: str = getcwd()
         filepath: str = path.join(current_dir, dir_name.get_text().replace("/", "-"))
@@ -42,30 +85,31 @@ class Main:
         chdir(filepath)
 
 
-    def downloadImages(self) -> None:
-        req: Request = Request(self.url, headers={'User-Agent': 'Mozilla/5.0'})
+    @staticmethod
+    def _getLinks(soup: BeautifulSoup) -> Generator[str, None, None]:
+        """
+        Yields each and every link of an url.
 
-
-        try:
-            page: _UrlopenRet = urlopen(req).read()
-        except URLError:
-            exit('verify the connection with the internet!')
-
-
-        soup: BeautifulSoup = BeautifulSoup(page, 'html.parser')
+        :param soup: parsed html album's content.
+        :return: an generator of type string, the file link. 
+        """
 
         images_urls: ResultSet = soup.find_all("div", class_="list-item-image fixed-size")
 
-        url: List[str]
-        concat_url: str
+        image_url: List[str]
+        concat_url: str = ""
 
         for i in images_urls:
-            file = i.find("img", alt=True)["alt"]
-            
-            try:
-                url = i.find("img", alt=True)["src"].split("/")[:-1]
+            file: str = i.find("img", alt=True)["alt"]
 
-                concat_url = "https://" + "".join([i + "/" for i in url[2:]]) + file
+
+            try:
+                image_url = i.find("img", alt=True)["src"].split("/")[:-1]
+
+                concat_url = "https://" + "".join([i + "/" for i in image_url[2:]]) + file
+                
+                yield concat_url
+
             except IndexError:
                 if concat_url:
                     print(f"Something went wronge when parsing the url {concat_url}")
@@ -74,26 +118,55 @@ class Main:
 
                 exit(-1)
 
-            if not file:
-                print("Empty filename: Error when parsing filename")
-                exit(-1)
 
+    @staticmethod
+    def _downloadImage(url: str, chunk_size: int = 4096) -> None:
+        """
+        Download the content of the url.
 
-            try:
-                img_data = get(concat_url).content
+        :param url: url to the image.
+        :param chunk_size: the number of bytes it should read into memory.
+        :return:
+        """
 
-                with open(file, 'wb') as handler:
-                    handler.write(img_data)
-            except:
-                pass
+        file: str = url.split("/")[-1]
 
+        if not file:
+            print(f"Failed to get a filename for {url}")
+
+            return
+       
+        with get(url, stream=True) as response_handler:
+            if response_handler.status_code in (403, 404, 405, 500):
+                print(f"Couldn't download the file from {url}.\nStatus code: {response_handler.status_code}")
+                return
+            with open(file, 'wb+') as handler:
+                has_size: str | None = response_handler.headers.get('Content-Length')
+
+                total_size: float
+
+                if has_size:
+                    total_size = float(has_size)
+                else:
+                    print(f"{file} has no content.")
+                    return
+                
+                for i, chunk in enumerate(response_handler.iter_content(chunk_size)):
+                    progress: float = i * chunk_size / total_size * 100
+
+                    handler.write(chunk)
+
+                    stdout.write(f"\rDownloading {file}: {round(progress, 1)}%")
+                    stdout.flush()
+
+                stdout.write(f"\rDownloaded {file}: 100.0%!\n")
+                stdout.flush()
 
 
 if __name__ == '__main__':
     print('Starting, please wait...')
 
     try:
-        from os import environ
         from sys import argv
 
 
@@ -108,13 +181,11 @@ if __name__ == '__main__':
                 exit(-1)
 
         except IndexError:
-            print("specify an url, like: ./jpg-church-downloader.py https://jpg.church/a/albumname")
+            print("specify an url, like: python jpg-church-downloader.py https://jpg.church/a/albumname")
             exit(-1)
 
 
-        m: Main = Main(url=url)
-        m.createDir()
-        m.downloadImages()
+        Main(url=url)
 
     except KeyboardInterrupt:
         exit(1)
