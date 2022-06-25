@@ -2,14 +2,36 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 from bs4 import BeautifulSoup, ResultSet, Tag, NavigableString
 from os import path, mkdir, getcwd, chdir
-from sys import exit, stdout
-from typing import Any, Dict, List, Generator
+from sys import exit, stdout, stderr
+from typing import Any, List, Generator
 from requests import get
 from urllib.request import Request, urlopen
 from concurrent.futures import ThreadPoolExecutor
+from platform import system
 
 
 _UrlopenRet = Any
+
+
+NEW_LINE: str = "\n"
+
+
+if system() == "Windows":
+    NEW_LINE = "\r\n"
+
+
+def die(message: str) -> None:
+    """
+    Display a message of error and exit.
+    :param message: message to be displayed.
+    :return:
+    """
+
+
+    stderr.write(message + NEW_LINE)
+    stderr.flush()
+
+    exit(-1)
 
 
 class Main:
@@ -53,9 +75,7 @@ class Main:
             return page
 
         except URLError:
-            print("Failed to make a page request verify your internet connection!")
-            exit(-1)
-
+            die("Failed to make a page request verify your internet connection!")
 
 
     @staticmethod
@@ -69,26 +89,25 @@ class Main:
 
         dir_name: Tag | NavigableString | None = soup.find("h1", class_="text-overflow-ellipsis")
 
-        if not dir_name:
-            print(f"Failed to parse a directory name from the {url}")
-            exit(-1)
+        if dir_name:
+            current_dir: str = getcwd()
+            filepath: str = path.join(current_dir, dir_name.get_text().replace("/", "-"))
 
-        current_dir: str = getcwd()
-        filepath: str = path.join(current_dir, dir_name.get_text().replace("/", "-"))
+            try:
+                mkdir(path.join(filepath))
+            # if the directory already exist is safe to do nothing
+            except FileExistsError:
+                pass
 
-        try:
-            mkdir(path.join(filepath))
-        # if the directory already exist is safe to do nothing
-        except FileExistsError:
-            pass
-
-        chdir(filepath)
+            chdir(filepath)
+        else:
+            die(f"Failed to parse a directory name from the {url}")
 
 
     @staticmethod
     def _getLinks(soup: BeautifulSoup) -> Generator[str, None, None]:
         """
-        Yields each and every link of an url.
+        Yields each and every image link from the page.
 
         :param soup: parsed html album's content.
         :return: an generator of type string, the file link. 
@@ -111,12 +130,7 @@ class Main:
                 yield concat_url
 
             except IndexError:
-                if concat_url:
-                    print(f"Something went wronge when parsing the url {concat_url}")
-                else:
-                    print(f"Empty url internally parsed: {url}")
-
-                exit(-1)
+                die(f"Something went wrong while trying to get link {i}.")
 
 
     @staticmethod
@@ -138,7 +152,7 @@ class Main:
        
         with get(url, stream=True) as response_handler:
             if response_handler.status_code in (403, 404, 405, 500):
-                print(f"Couldn't download the file from {url}.\nStatus code: {response_handler.status_code}")
+                print(f"Couldn't download the file from {url}." + NEW_LINE + "Status code: {response_handler.status_code}")
                 return
             with open(file, 'wb+') as handler:
                 has_size: str | None = response_handler.headers.get('Content-Length')
@@ -159,7 +173,7 @@ class Main:
                     stdout.write(f"\rDownloading {file}: {round(progress, 1)}%")
                     stdout.flush()
 
-                stdout.write(f"\rDownloaded {file}: 100.0%!\n")
+                stdout.write(f"\rDownloaded {file}: 100.0%!" + NEW_LINE)
                 stdout.flush()
 
 
@@ -170,22 +184,16 @@ if __name__ == '__main__':
         from sys import argv
 
 
-        url: str
-
-
         try:
-            url = argv[1]
+            url: str = argv[1]
 
             if not url.split('/')[-2] == "a":
-                print(f"the url is propably not an album {url}")
-                exit(-1)
+                die(f"the url is propably not an album {url}")
 
+            Main(url=url)
         except IndexError:
-            print("specify an url, like: python jpg-church-downloader.py https://jpg.church/a/albumname")
-            exit(-1)
+            die("specify an url, like: python jpg-church-downloader.py https://jpg.church/a/albumname")
 
-
-        Main(url=url)
 
     except KeyboardInterrupt:
         exit(1)
