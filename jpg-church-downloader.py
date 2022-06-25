@@ -23,6 +23,7 @@ if system() == "Windows":
 def die(message: str) -> None:
     """
     Display a message of error and exit.
+
     :param message: message to be displayed.
     :return:
     """
@@ -34,26 +35,27 @@ def die(message: str) -> None:
     exit(-1)
 
 
+# _max_workers is the max number of tasks that will be parallelized
+# defaults to 50 simultaneous downloads
 class Main:
-    def __init__(self, url: str, _max_workers: int = 20) -> None:
-
+    def __init__(self, url: str, _max_workers: int = 50) -> None:
         self._page: _UrlopenRet = self._makeRequest(url)
         self._soup: BeautifulSoup = BeautifulSoup(self._page, "html.parser") 
+        self._max_workers: int = _max_workers
 
         self._createDir(self._soup)
 
-        self._threadedDownloads(_max_workers)
+        self._threadedDownloads()
 
 
-    def _threadedDownloads(self, max_workers: int) -> None:
+    def _threadedDownloads(self) -> None:
         """
         Parallelize the downloads.
 
-        :param max_workers: the max thread number.
         :return:
         """
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             for link in self._getLinks(self._soup):
                 executor.submit(self._downloadImage, link)
 
@@ -136,7 +138,7 @@ class Main:
     @staticmethod
     def _downloadImage(url: str, chunk_size: int = 4096) -> None:
         """
-        Download the content of the url.
+        Download the image of the url.
 
         :param url: url to the image.
         :param chunk_size: the number of bytes it should read into memory.
