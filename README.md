@@ -1,5 +1,5 @@
 # jpg-church-downloader
-Download albuns from the jpg.church
+Download albums from https://jpg.church
 
 # Requirements
 ```shell
