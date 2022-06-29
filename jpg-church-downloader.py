@@ -1,23 +1,13 @@
-from urllib.request import Request, urlopen
-from urllib.error import URLError
 from bs4 import BeautifulSoup, ResultSet, Tag, NavigableString
 from os import path, mkdir, getcwd, chdir
 from sys import exit, stdout, stderr
-from typing import Any, List, Generator
-from requests import get
-from urllib.request import Request, urlopen
+from typing import Any, List, Dict, Generator
+from requests import get, Session, Response, ConnectionError
 from concurrent.futures import ThreadPoolExecutor
 from platform import system
 
 
-_UrlopenRet = Any
-
-
-NEW_LINE: str = "\n"
-
-
-if system() == "Windows":
-    NEW_LINE = "\r\n"
+NEW_LINE: str = "\n" if system() != "Windows" else "\r\n"
 
 
 def die(message: str) -> None:
@@ -35,13 +25,13 @@ def die(message: str) -> None:
     exit(-1)
 
 
-# _max_workers is the max number of tasks that will be parallelized
+# max_workers is the max number of tasks that will be parallelized
 # defaults to 50 simultaneous downloads
 class Main:
-    def __init__(self, url: str, _max_workers: int = 50) -> None:
-        self._page: _UrlopenRet = self._makeRequest(url)
+    def __init__(self, url: str, password: str | None = None, max_workers: int = 50) -> None:
+        self._page: bytes = self._makeRequest(url, password)
         self._soup: BeautifulSoup = BeautifulSoup(self._page, "html.parser") 
-        self._max_workers: int = _max_workers
+        self._max_workers: int = max_workers
 
         self._createDir(self._soup)
 
@@ -61,23 +51,31 @@ class Main:
 
 
     @staticmethod
-    def _makeRequest(url: str) -> _UrlopenRet:
+    def _makeRequest(url: str, password: str | None = None) -> bytes:
         """
         Return the content of the request. 
 
         :param page: url to the album.
-        :return
+        :param password: password's content
+        :return:
         """
 
-        req: Request = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        req: Response = Response()
 
-        try:
-            page: _UrlopenRet = urlopen(req).read()
+        with Session() as s:
+            data: Dict[str, str] | None = None
 
-            return page
+            if password:
+                data = {"content-password": password}
 
-        except URLError:
-            die("Failed to make a page request verify your internet connection!")
+
+            try:
+                req = s.post(url, headers={'User-Agent': 'Mozilla/5.0'}, data=data)
+            except ConnectionError:
+                die("Failed to make a page request verify your internet connection!")
+
+
+        return req.content
 
 
     @staticmethod
@@ -180,23 +178,30 @@ class Main:
 
 
 if __name__ == '__main__':
-    print('Starting, please wait...')
-
     try:
         from sys import argv
 
 
-        try:
-            url: str = argv[1]
+        url: str | None = None
+        password: str | None = None
+        argc: int = len(argv)
 
-            if not url.split('/')[-2] == "a":
-                die(f"the url is propably not an album {url}")
+        if argc > 1:
+            url = argv[1]
 
-            Main(url=url)
-        except IndexError:
-            die("specify an url, like: python jpg-church-downloader.py https://jpg.church/a/albumname")
+            if argc > 2:
+                password = argv[2]
 
-
+            # Run
+            print('Starting, please wait...')
+            Main(url=url, password=password, max_workers=50)
+        else:
+            die("Usage:"
+                + NEW_LINE
+                + "python jpg-church-downloader.py https://jpg.church/a/albumname"
+                + NEW_LINE
+                + "python jpg-church-downloader.py https://jpg.church/a/albumname password"
+            )
     except KeyboardInterrupt:
         exit(1)
 
