@@ -242,7 +242,7 @@ if __name__ == '__main__':
 
             # Run
             print('Starting, please wait...')
-            Main(url=url, password=password, max_workers=50)
+            Main(url=url, password=password)
         else:
             die("Usage:"
                 + NEW_LINE
