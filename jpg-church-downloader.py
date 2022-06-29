@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup, ResultSet, Tag, NavigableString
 from os import path, mkdir, getcwd, chdir
 from sys import exit, stdout, stderr
 from typing import Any, List, Dict, Generator
-from requests import get, Session, Response, ConnectionError
+from requests import get, Session, Response
 from concurrent.futures import ThreadPoolExecutor
 from platform import system
 
@@ -29,13 +29,32 @@ def die(message: str) -> None:
 # defaults to 50 simultaneous downloads
 class Main:
     def __init__(self, url: str, password: str | None = None, max_workers: int = 50) -> None:
-        self._page: bytes = self._makeRequest(url, password)
+        self._password: str | None = password
+        self._url: str = url
+        self._page: bytes = self._makeRequest(self._url, self._password)
         self._soup: BeautifulSoup = BeautifulSoup(self._page, "html.parser") 
         self._max_workers: int = max_workers
 
         self._createDir(self._soup)
 
+        self._initDownloads()
+
+
+    def _initDownloads(self) -> None:
+        """
+        Starts downloading.
+
+        :return:
+        """
+
+
         self._threadedDownloads()
+
+        for link in self._nextPages():
+            self._page = self._makeRequest(link, self._password)
+            self._soup = BeautifulSoup(self._page, "html.parser")
+
+            self._threadedDownloads()
 
 
     def _threadedDownloads(self) -> None:
@@ -45,9 +64,38 @@ class Main:
         :return:
         """
 
+
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             for link in self._getLinks(self._soup):
                 executor.submit(self._downloadImage, link)
+
+
+    def _nextPages(self) -> Generator[str, None, None]:
+        """
+        Yields a link to the next page if it exist.
+
+        :return: an generator of type string, the next page's link. 
+        """
+
+
+        while True:
+            next_page: Tag | NavigableString | None = self._soup.find(class_="pagination-next")
+
+            if next_page:
+                if isinstance(next_page, Tag):
+                    next_page = next_page.find("a")
+                    if isinstance(next_page, Tag):
+                        link: str | List[str] | None = next_page["href"]
+                        if link and isinstance(link, str):
+                            yield link
+                        else:
+                            break
+                    else:
+                        break
+                else:
+                    break
+            else:
+                break
 
 
     @staticmethod
@@ -113,8 +161,8 @@ class Main:
         :return: an generator of type string, the file link. 
         """
 
-        images_urls: ResultSet = soup.find_all("div", class_="list-item-image fixed-size")
 
+        images_urls: ResultSet = soup.find_all("div", class_="list-item-image fixed-size")
         image_url: List[str]
         concat_url: str = ""
 
