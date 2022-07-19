@@ -10,7 +10,7 @@ pip install -r requirements.txt
 ```
 python jpg-church-downloader https://jpg.church/a/albumid
 ```
-If it has passowrd:
+If it has password:
 ```
 python jpg-church-downloader https://jpg.church/a/albumid password
 ```
