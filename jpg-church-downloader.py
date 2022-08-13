@@ -1,3 +1,6 @@
+#! /usr/bin/env python3
+
+
 from bs4 import BeautifulSoup, ResultSet, Tag, NavigableString
 from os import path, mkdir, getcwd, chdir
 from sys import exit, stdout, stderr
